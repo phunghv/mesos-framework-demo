@@ -5,6 +5,7 @@ import java.util.*;
 
 import javax.swing.SwingUtilities;
 
+import org.apache.curator.framework.CuratorFramework;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.mesos.*;
@@ -14,8 +15,10 @@ public class UselessRemoteBASH implements Scheduler {
 	final static Logger logger = LogManager.getLogger(UselessRemoteBASH.class);
 	// private boolean submitted = false;
 	private List<Job> jobs = null;
+	private CuratorFramework curator;
 
-	public UselessRemoteBASH(List jobs) {
+	public UselessRemoteBASH(CuratorFramework curator, List jobs) {
+		this.curator = curator;
 		this.jobs = jobs;
 	}
 
@@ -51,7 +54,12 @@ public class UselessRemoteBASH implements Scheduler {
 			FrameworkID frameworkId, MasterInfo masterInfo) {
 		System.out.println("Registered with framework id " + frameworkId);
 		logger.info("Registered with framework id  {}", frameworkId.toString());
-
+		try {
+			curator.create().creatingParentsIfNeeded()
+					.forPath("/sampleframework/id", frameworkId.toByteArray());
+		} catch (Exception e) {
+			/* Do nothing */
+		}
 	}
 
 	public void reregistered(SchedulerDriver schedulerDriver,
@@ -148,4 +156,5 @@ public class UselessRemoteBASH implements Scheduler {
 			}
 		}
 	}
+	
 }

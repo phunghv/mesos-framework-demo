@@ -128,7 +128,7 @@
 					<archive>
 						<manifest>
 							<addClasspath>true</addClasspath>
-							<mainClass>com.tsdv.storage.demo.App</mainClass>
+							<mainClass>com.phunghv.cluster.demo.App</mainClass>
 						</manifest>
 					</archive>
 					<descriptorRefs>

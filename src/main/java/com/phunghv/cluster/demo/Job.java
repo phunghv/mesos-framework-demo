@@ -1,14 +1,16 @@
 package com.phunghv.cluster.demo;
 
+import java.io.UnsupportedEncodingException;
 import java.util.UUID;
 
+import org.apache.curator.framework.CuratorFramework;
 import org.apache.mesos.Protos.CommandInfo;
 import org.apache.mesos.Protos.Resource;
 import org.apache.mesos.Protos.SlaveID;
 import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Protos.TaskInfo;
 import org.apache.mesos.Protos.Value;
-
+import org.apache.zookeeper.KeeperException;
 import org.json.*;
 
 public class Job {
@@ -19,6 +21,7 @@ public class Job {
 	private JobState status;
 	private String id;
 	private int retries;
+	private CuratorFramework curator;
 
 	private Job() {
 		this.submitted = false;
@@ -27,16 +30,27 @@ public class Job {
 		this.retries = 3;
 	}
 
+	private Job(CuratorFramework curator) {
+		this.submitted = false;
+		this.curator = curator;
+		this.status = JobState.PENDING;
+		this.id = UUID.randomUUID().toString();
+		this.retries = 3;
+	}
+
 	public void launch() {
 		this.status = JobState.STAGING;
+		saveState();
 	}
 
 	public void started() {
 		this.status = JobState.RUNNING;
+		saveState();
 	}
 
 	public void succeed() {
 		this.status = JobState.SUCCESSFUL;
+		saveState();
 	}
 
 	public void fail() {
@@ -47,6 +61,7 @@ public class Job {
 			this.retries--;
 			this.status = JobState.PENDING;
 		}
+		saveState();
 	}
 
 	public TaskInfo makeTask(SlaveID targetSlave) {
@@ -74,6 +89,38 @@ public class Job {
 		job.setMem(json.getDouble("mem"));
 		job.setCommand(json.getString("command"));
 		return job;
+	}
+
+	public static Job fromJSON(JSONObject json, CuratorFramework curator)
+			throws JSONException {
+		Job job = new Job();
+		job.setCpus(json.getDouble("cpus"));
+		job.setCurator(curator);
+		job.setMem(json.getDouble("mem"));
+		job.setCommand(json.getString("command"));
+		return job;
+	}
+
+	private void saveState() {
+		try {
+			JSONObject obj = new JSONObject();
+			obj.put("id", this.id);
+			obj.put("status", (this.status == JobState.STAGING
+					? JobState.RUNNING : status).toString());
+			byte[] data = null;
+			try {
+				data = obj.toString().getBytes("UTF-8");
+				curator.setData().forPath("/sampleframework/jobs/" + id, data);
+			} catch (UnsupportedEncodingException e) {
+				e.printStackTrace();
+			} catch (KeeperException.NoNodeException e) {
+				curator.create().creatingParentsIfNeeded()
+						.forPath("/sampleframework/jobs" + id, data);
+				e.printStackTrace();
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	public double getCpus() {
@@ -130,6 +177,14 @@ public class Job {
 
 	public void setRetries(int retries) {
 		this.retries = retries;
+	}
+
+	public CuratorFramework getCurator() {
+		return curator;
+	}
+
+	public void setCurator(CuratorFramework curator) {
+		this.curator = curator;
 	}
 
 }
