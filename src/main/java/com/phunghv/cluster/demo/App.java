@@ -25,16 +25,19 @@ import org.apache.zookeeper.KeeperException;
  */
 public class App {
 	final static Logger logger = LogManager.getLogger(App.class);
+	final static String PATH = "/sampleframework";
 
 	public static void main(String[] args) throws Exception {
+		for (int i = 0; i < args.length; i++) {
+			System.out.println("Args[" + i + "]=" + args[i]);
+		}
 		logger.info("Start main function");
 
 		CuratorFramework curator = CuratorFrameworkFactory.newClient(args[0],
 				new RetryOneTime(1000));
 		curator.start();
 
-		LeaderLatch leaderLatch = new LeaderLatch(curator,
-				"/sampleframework/leader");
+		LeaderLatch leaderLatch = new LeaderLatch(curator, PATH + "/leader");
 		leaderLatch.start();
 		leaderLatch.await();
 		// Load list jobs
@@ -48,16 +51,18 @@ public class App {
 			}
 			System.out.println("Loaded jobs from file");
 		}
-		for (String id : curator.getChildren()
-				.forPath("/sampleframework/jobs")) {
-			byte[] data = curator.getData()
-					.forPath("/sampleframework/jobs/" + id);
-			JSONObject jobJSON = new JSONObject(new String(data, "UTF-8"));
-			Job job = Job.fromJSON(jobJSON, curator);
-			jobs.add(job);
-			System.out.println("Loaded jobs from ZK");
+		try {
+			for (String id : curator.getChildren().forPath(PATH + "/jobs")) {
+				System.out.println("search job id :" + id);
+				byte[] data = curator.getData().forPath(PATH + "/jobs/" + id);
+				JSONObject jobJSON = new JSONObject(new String(data, "UTF-8"));
+				Job job = Job.fromJSON(jobJSON, curator);
+				jobs.add(job);
+				System.out.println("Loaded jobs from ZK");
+			}
+		} catch (Exception e) {
+			System.out.println("Cannot load jobs from ZK");
 		}
-
 		System.out.println("______________________________");
 		System.out.println("Job size: " + jobs.size());
 		for (Job j : jobs) {
@@ -68,21 +73,18 @@ public class App {
 				.setName("Useless Remote BASH");
 
 		try {
-			byte[] curatorData = curator.getData()
-					.forPath("/sampleframework/id");
+			byte[] curatorData = curator.getData().forPath(PATH + "/id");
 			frBuilder.setId(FrameworkID.newBuilder()
 					.setValue(new String(curatorData, "UTF-8")));
 			System.out.println(
 					"ID from curator " + new String(curatorData, "UTF-8"));
 		} catch (KeeperException.NoNodeException e) {
-
+			System.out.println("no id stored on zk, allow Mesos to assign it");
 		}
 
 		FrameworkInfo frameworkInfo = frBuilder
 				.setFailoverTimeout(60 * 60 * 24 * 7).build();
 
-		// FrameworkInfo frameworkInfo = FrameworkInfo.newBuilder().setUser("")
-		// .setName("Useless Remote BASH").build();
 		Scheduler scheduler = new UselessRemoteBASH(curator, jobs);
 		SchedulerDriver schedulerDriver = new MesosSchedulerDriver(scheduler,
 				frameworkInfo, "zk://" + args[0] + "/mesos");

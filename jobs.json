@@ -3,11 +3,6 @@
         {
             "cpus": 0.2,
             "mem": 128,
-            "command": "sleep 60; echo hello fungj",
-        },
-        {
-            "cpus": 0.2,
-            "mem": 128,
             "command": "while [ true ] ; do echo 'Hello PhungHV 1' ; sleep 5 ; done"
         },
         {

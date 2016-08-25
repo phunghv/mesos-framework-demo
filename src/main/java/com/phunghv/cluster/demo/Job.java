@@ -1,9 +1,10 @@
 package com.phunghv.cluster.demo;
 
-import java.io.UnsupportedEncodingException;
 import java.util.UUID;
 
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.mesos.Protos.CommandInfo;
 import org.apache.mesos.Protos.Resource;
 import org.apache.mesos.Protos.SlaveID;
@@ -22,12 +23,15 @@ public class Job {
 	private String id;
 	private int retries;
 	private CuratorFramework curator;
+	private SlaveID slaveId;
+
+	final static Logger logger = LogManager.getLogger(Job.class);
 
 	private Job() {
 		this.submitted = false;
 		this.status = JobState.PENDING;
 		this.id = UUID.randomUUID().toString();
-		this.retries = 3;
+		this.retries = 10;
 	}
 
 	private Job(CuratorFramework curator) {
@@ -35,38 +39,47 @@ public class Job {
 		this.curator = curator;
 		this.status = JobState.PENDING;
 		this.id = UUID.randomUUID().toString();
-		this.retries = 3;
+		this.retries = 10;
 	}
 
 	public void launch() {
+		logger.info("launch job");
 		this.status = JobState.STAGING;
 		saveState();
 	}
 
 	public void started() {
+		logger.info("job started");
 		this.status = JobState.RUNNING;
 		saveState();
 	}
 
 	public void succeed() {
+		logger.info("job succeed");
 		this.status = JobState.SUCCESSFUL;
 		saveState();
 	}
 
 	public void fail() {
+		logger.info("retry job");
 		System.out.println("Retry count " + (4 - this.retries));
 		if (this.retries == 0) {
+			logger.info("job failed");
 			this.status = JobState.FAILED;
 		} else {
 			this.retries--;
+			logger.info("retry job count {}", this.retries);
 			this.status = JobState.PENDING;
 		}
 		saveState();
 	}
 
 	public TaskInfo makeTask(SlaveID targetSlave) {
-		UUID uuid = UUID.randomUUID();
-		TaskID id = TaskID.newBuilder().setValue(uuid.toString()).build();
+		logger.info("make task on {}", targetSlave.toString());
+//		UUID uuid = UUID.randomUUID();
+		TaskID id = TaskID.newBuilder().setValue(this.id).build();
+		this.setSlaveId(targetSlave);
+		// this.setId(id.getValue());
 		return TaskInfo.newBuilder().setName("phunghv.task_" + id.getValue())
 				.setTaskId(id)
 				.addResources(
@@ -102,23 +115,25 @@ public class Job {
 	}
 
 	private void saveState() {
+		logger.info("save state job id={}", this.id);
 		try {
 			JSONObject obj = new JSONObject();
 			obj.put("id", this.id);
+			obj.put("cmd", this.command);
+			obj.put("cpus", this.cpus);
+			obj.put("mem", this.mem);
 			obj.put("status", (this.status == JobState.STAGING
 					? JobState.RUNNING : status).toString());
-			byte[] data = null;
+			byte[] data = obj.toString().getBytes("UTF-8");
 			try {
-				data = obj.toString().getBytes("UTF-8");
 				curator.setData().forPath("/sampleframework/jobs/" + id, data);
-			} catch (UnsupportedEncodingException e) {
-				e.printStackTrace();
 			} catch (KeeperException.NoNodeException e) {
 				curator.create().creatingParentsIfNeeded()
-						.forPath("/sampleframework/jobs" + id, data);
-				e.printStackTrace();
+						.forPath("/sampleframework/jobs/" + id, data);
 			}
+			logger.info("Save state of job : " + obj.toString(3));
 		} catch (Exception e) {
+			System.out.println("Cannot create parrent node");
 			e.printStackTrace();
 		}
 	}
@@ -185,6 +200,24 @@ public class Job {
 
 	public void setCurator(CuratorFramework curator) {
 		this.curator = curator;
+	}
+
+	public SlaveID getSlaveId() {
+		return slaveId;
+	}
+
+	public void setSlaveId(SlaveID slaveId) {
+		this.slaveId = slaveId;
+	}
+
+	public String toString() {
+		StringBuilder result = new StringBuilder("\n__________________\njob_");
+		result.append(this.id);
+		result.append("\n retry=" + this.retries);
+		result.append("\n " + this.command);
+		result.append("\n submitted=");
+		result.append(this.submitted + "\n____________________");
+		return result.toString();
 	}
 
 }

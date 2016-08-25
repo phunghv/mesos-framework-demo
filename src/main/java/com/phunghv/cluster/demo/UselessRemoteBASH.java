@@ -1,11 +1,9 @@
 package com.phunghv.cluster.demo;
 
-import java.nio.*;
 import java.util.*;
 
-import javax.swing.SwingUtilities;
-
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.http.impl.io.SocketOutputBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.mesos.*;
@@ -17,42 +15,41 @@ public class UselessRemoteBASH implements Scheduler {
 	private List<Job> jobs = null;
 	private CuratorFramework curator;
 
-	public UselessRemoteBASH(CuratorFramework curator, List jobs) {
+	public UselessRemoteBASH(CuratorFramework curator, List<Job> jobs) {
 		this.curator = curator;
 		this.jobs = jobs;
 	}
 
 	public void disconnected(SchedulerDriver schedulerDriver) {
-		// TODO Auto-generated method stub
+		logger.info("Disconnect with {}", schedulerDriver.toString());
 
 	}
 
 	public void error(SchedulerDriver schedulerDriver, String error) {
-		// TODO Auto-generated method stub
+		logger.info("framework error {}:  {}", schedulerDriver.toString(),
+				error);
 
 	}
 
 	public void executorLost(SchedulerDriver schedulerDriver,
 			ExecutorID executorID, SlaveID slaveID, int id) {
-		// TODO Auto-generated method stub
 
 	}
 
 	public void frameworkMessage(SchedulerDriver schedulerDriver,
 			ExecutorID executorID, SlaveID slaveID, byte[] id) {
-		// TODO Auto-generated method stub
+		logger.info("framework message {} {} {} ", schedulerDriver.toString(),
+				executorID.toString(), slaveID.toBuilder());
 
 	}
 
 	public void offerRescinded(SchedulerDriver schedulerDriver,
 			OfferID offerID) {
-		// TODO Auto-generated method stub
 
 	}
 
 	public void registered(SchedulerDriver schedulerDriver,
 			FrameworkID frameworkId, MasterInfo masterInfo) {
-		System.out.println("Registered with framework id " + frameworkId);
 		logger.info("Registered with framework id  {}", frameworkId.toString());
 		try {
 			curator.create().creatingParentsIfNeeded()
@@ -64,8 +61,23 @@ public class UselessRemoteBASH implements Scheduler {
 
 	public void reregistered(SchedulerDriver schedulerDriver,
 			MasterInfo masterInfo) {
-		// TODO Auto-generated method stub
+		logger.info("Re-registered framework with {} {}",
+				schedulerDriver.toString(), masterInfo.toString());
 
+		List<TaskStatus> runningTasks = new ArrayList<>();
+		for (Job job : jobs) {
+			System.out.println("check jobs after re register :" + job);
+			if (job.getStatus() == JobState.RUNNING) {
+				TaskID id = TaskID.newBuilder().setValue(job.getId()).build();
+				SlaveID slaveId = SlaveID.newBuilder()
+						.setValue(job.getSlaveId().toString()).build();
+				System.out.println("Reconciling the task " + job.getId());
+				runningTasks.add(TaskStatus.newBuilder().setSlaveId(slaveId)
+						.setTaskId(id).setState(TaskState.TASK_RUNNING)
+						.build());
+			}
+		}
+		schedulerDriver.reconcileTasks(runningTasks);
 	}
 
 	public void resourceOffers(SchedulerDriver schedulerDriver,
@@ -127,15 +139,19 @@ public class UselessRemoteBASH implements Scheduler {
 	}
 
 	public void slaveLost(SchedulerDriver schedulerDriver, SlaveID slaveID) {
-		// TODO Auto-generated method stub
-
+		logger.info("lostSlave");
 	}
 
 	public void statusUpdate(SchedulerDriver schedulerDriver,
 			TaskStatus status) {
-		System.out.println("Got status update " + status);
+
+		System.out.println("PhunghV got status update :" + status.getMessage());
+		System.out.println("Size job = " + this.jobs.size());
 		synchronized (this.jobs) {
 			for (Job job : jobs) {
+				System.out.println("check job " + job);
+				logger.info("check job id = {} with status of task = {}",
+						job.getId(), status.getState().toString());
 				if (job.getId().equals(status.getTaskId().getValue())) {
 					switch (status.getState()) {
 					case TASK_RUNNING:
@@ -144,17 +160,20 @@ public class UselessRemoteBASH implements Scheduler {
 					case TASK_FINISHED:
 						job.succeed();
 						break;
+
 					case TASK_FAILED:
 					case TASK_KILLED:
 					case TASK_LOST:
+
 						job.fail();
 						break;
 					default:
+						logger.info("check defaulllll");
 						break;
 					}
 				}
 			}
 		}
 	}
-	
+
 }
