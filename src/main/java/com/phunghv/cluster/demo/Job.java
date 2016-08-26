@@ -24,6 +24,9 @@ public class Job {
 	private int retries;
 	private CuratorFramework curator;
 	private SlaveID slaveId;
+	private String newly;
+	private String failover;
+	private boolean isFailed = false;
 
 	final static Logger logger = LogManager.getLogger(Job.class);
 
@@ -32,6 +35,8 @@ public class Job {
 		this.status = JobState.PENDING;
 		this.id = UUID.randomUUID().toString();
 		this.retries = 10;
+		this.newly = null;
+		this.failover = null;
 	}
 
 	private Job(CuratorFramework curator) {
@@ -40,6 +45,8 @@ public class Job {
 		this.status = JobState.PENDING;
 		this.id = UUID.randomUUID().toString();
 		this.retries = 10;
+		this.newly = null;
+		this.failover = null;
 	}
 
 	public void launch() {
@@ -61,22 +68,24 @@ public class Job {
 	}
 
 	public void fail() {
-		logger.info("retry job");
-		System.out.println("Retry count " + (4 - this.retries));
+		logger.info("retry job ");
+		this.isFailed = true; // flag task is fail
+		System.out.println("Retry count " + (10 - this.retries));
 		if (this.retries == 0) {
 			logger.info("job failed");
 			this.status = JobState.FAILED;
 		} else {
 			this.retries--;
-			logger.info("retry job count {}", this.retries);
+			logger.info("counter --- retry job count {}", this.retries);
 			this.status = JobState.PENDING;
+			this.submitted = false;
 		}
 		saveState();
 	}
 
 	public TaskInfo makeTask(SlaveID targetSlave) {
 		logger.info("make task on {}", targetSlave.toString());
-//		UUID uuid = UUID.randomUUID();
+		// UUID uuid = UUID.randomUUID();
 		TaskID id = TaskID.newBuilder().setValue(this.id).build();
 		this.setSlaveId(targetSlave);
 		// this.setId(id.getValue());
@@ -101,13 +110,50 @@ public class Job {
 		job.setCpus(json.getDouble("cpus"));
 		job.setMem(json.getDouble("mem"));
 		job.setCommand(json.getString("command"));
+		job.setCpus(json.getDouble("cpus"));
+		if (json.has("newly")) {
+			job.setNewly(json.getString("newly"));
+		}
+		if (json.has("failover")) {
+			job.setFailover(json.getString("failover"));
+		}
 		return job;
 	}
 
 	public static Job fromJSON(JSONObject json, CuratorFramework curator)
 			throws JSONException {
 		Job job = new Job();
+		job.setId(json.getString("id"));
+		logger.info("create job from json with curator :{}",
+				json.getString("status"));
+		switch (json.getString("status")) {
+		case "RUNNING":
+			job.setStatus(JobState.RUNNING);
+			job.setSubmitted(true);
+			break;
+		case "FAILED":
+			job.setStatus(JobState.FAILED);
+			break;
+		case "SUCCESSFUL":
+			job.setStatus(JobState.SUCCESSFUL);
+			job.setSubmitted(true);
+			break;
+		case "PENDING":
+			job.setStatus(JobState.PENDING);
+
+			break;
+		default:
+			job.setStatus(JobState.FAILED);
+			break;
+		}
 		job.setCpus(json.getDouble("cpus"));
+		if (json.has("newly")) {
+			job.setNewly(json.getString("newly"));
+		}
+		if (json.has("failover")) {
+			job.setFailover(json.getString("failover"));
+		}
+		job.setFailed(json.getBoolean("isFailed"));
 		job.setCurator(curator);
 		job.setMem(json.getDouble("mem"));
 		job.setCommand(json.getString("command"));
@@ -115,26 +161,32 @@ public class Job {
 	}
 
 	private void saveState() {
-		logger.info("save state job id={}", this.id);
+		JSONObject obj = new JSONObject();
+		obj.put("id", this.id);
+		obj.put("command", this.command);
+		obj.put("cpus", this.cpus);
+		obj.put("mem", this.mem);
+		if (this.newly != null) {
+			obj.put("newly", this.newly);
+		}
+		if (this.failover != null) {
+			obj.put("failover", this.failover);
+		}
+		obj.put("isFailed", this.isFailed);
+		obj.put("status",
+				(this.status == JobState.STAGING ? JobState.RUNNING : status)
+						.toString());
 		try {
-			JSONObject obj = new JSONObject();
-			obj.put("id", this.id);
-			obj.put("cmd", this.command);
-			obj.put("cpus", this.cpus);
-			obj.put("mem", this.mem);
-			obj.put("status", (this.status == JobState.STAGING
-					? JobState.RUNNING : status).toString());
 			byte[] data = obj.toString().getBytes("UTF-8");
 			try {
-				curator.setData().forPath("/sampleframework/jobs/" + id, data);
+				curator.setData().forPath(
+						ZookeeperContanst.FW_JOB_PATH + "/" + this.id, data);
 			} catch (KeeperException.NoNodeException e) {
-				curator.create().creatingParentsIfNeeded()
-						.forPath("/sampleframework/jobs/" + id, data);
+				curator.create().creatingParentsIfNeeded().forPath(
+						ZookeeperContanst.FW_JOB_PATH + "/" + this.id, data);
 			}
-			logger.info("Save state of job : " + obj.toString(3));
-		} catch (Exception e) {
-			System.out.println("Cannot create parrent node");
-			e.printStackTrace();
+		} catch (Exception e2) {
+			e2.printStackTrace();
 		}
 	}
 
@@ -208,6 +260,30 @@ public class Job {
 
 	public void setSlaveId(SlaveID slaveId) {
 		this.slaveId = slaveId;
+	}
+
+	public String getNewly() {
+		return newly;
+	}
+
+	public void setNewly(String newly) {
+		this.newly = newly;
+	}
+
+	public String getFailover() {
+		return failover;
+	}
+
+	public void setFailover(String failover) {
+		this.failover = failover;
+	}
+
+	public boolean isFailed() {
+		return isFailed;
+	}
+
+	public void setFailed(boolean isFailed) {
+		this.isFailed = isFailed;
 	}
 
 	public String toString() {

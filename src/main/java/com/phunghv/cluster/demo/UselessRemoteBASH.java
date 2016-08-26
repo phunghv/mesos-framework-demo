@@ -3,7 +3,6 @@ package com.phunghv.cluster.demo;
 import java.util.*;
 
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.http.impl.io.SocketOutputBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.mesos.*;
@@ -52,10 +51,10 @@ public class UselessRemoteBASH implements Scheduler {
 			FrameworkID frameworkId, MasterInfo masterInfo) {
 		logger.info("Registered with framework id  {}", frameworkId.toString());
 		try {
-			curator.create().creatingParentsIfNeeded()
-					.forPath("/sampleframework/id", frameworkId.toByteArray());
+			curator.create().creatingParentsIfNeeded().forPath(
+					ZookeeperContanst.FW_ID_PATH, frameworkId.toByteArray());
 		} catch (Exception e) {
-			/* Do nothing */
+			logger.error("cannot crate zookeeper id {}", e);
 		}
 	}
 
@@ -63,47 +62,84 @@ public class UselessRemoteBASH implements Scheduler {
 			MasterInfo masterInfo) {
 		logger.info("Re-registered framework with {} {}",
 				schedulerDriver.toString(), masterInfo.toString());
-
-		List<TaskStatus> runningTasks = new ArrayList<>();
-		for (Job job : jobs) {
-			System.out.println("check jobs after re register :" + job);
-			if (job.getStatus() == JobState.RUNNING) {
-				TaskID id = TaskID.newBuilder().setValue(job.getId()).build();
-				SlaveID slaveId = SlaveID.newBuilder()
-						.setValue(job.getSlaveId().toString()).build();
-				System.out.println("Reconciling the task " + job.getId());
-				runningTasks.add(TaskStatus.newBuilder().setSlaveId(slaveId)
-						.setTaskId(id).setState(TaskState.TASK_RUNNING)
-						.build());
-			}
-		}
-		schedulerDriver.reconcileTasks(runningTasks);
 	}
 
 	public void resourceOffers(SchedulerDriver schedulerDriver,
 			List<Offer> offers) {
 		synchronized (jobs) {
+			System.out.println("check pending job");
 			List<Job> pendingJobs = new ArrayList<>();
 			for (Job j : jobs) {
+				System.out.println(
+						"check job " + j.getId() + " : " + j.isSubmitted());
 				if (!j.isSubmitted()) {
 					pendingJobs.add(j);
 				}
 			}
+			System.out.println("pending jobs size :" + pendingJobs.size());
+			// change run task
 			for (Offer offer : offers) {
 				if (pendingJobs.isEmpty()) {
 					schedulerDriver.declineOffer(offer.getId());
 					break;
 				}
-				Job j = pendingJobs.remove(0);
-				System.out.println("Run task on " + offer.getHostname());
-				TaskInfo taskInfo = j.makeTask(offer.getSlaveId());
+				// schedulerDriver.launchTasks(
+				// Collections.singletonList(offer.getId()),
+				// doFirstFit(offer, pendingJobs));
 				schedulerDriver.launchTasks(
 						Collections.singletonList(offer.getId()),
-						doFirstFit(offer, pendingJobs));
-				j.setSubmitted(true);
-				System.out.println("Lauched offer: " + taskInfo.getName());
+						selectTask(offer, pendingJobs));
 			}
 		}
+
+	}
+
+	public List<TaskInfo> selectTask(Offer offer, List<Job> jobs) {
+		List<TaskInfo> toLaunch = new ArrayList<>();
+		List<Job> launchedJobs = new ArrayList<>();
+		double offerCpus = 0;
+		double offerMem = 0;
+		for (Resource resource : offer.getResourcesList()) {
+			if (resource.getName().equals("cpus")) {
+				offerCpus += resource.getScalar().getValue();
+			} else if (resource.getName().equals("mem")) {
+				offerMem += resource.getScalar().getValue();
+			} else {
+
+			}
+		}
+		logger.info("Total offer cpus = {} mem={}", offerCpus, offerMem);
+		logger.info("size job {}", jobs.size());
+		for (Job job : jobs) {
+			String checkHost = (job.isFailed() ? job.getFailover()
+					: job.getNewly());
+			logger.info("newly = {} failover {}", job.getNewly(),
+					job.getFailover());
+			logger.info("checkHost = {} and {}", checkHost,
+					offer.getHostname());
+			if (checkHost == null
+					|| checkHost.equalsIgnoreCase(offer.getHostname())) {
+				logger.info("checkHost = {} matched {}", checkHost,
+						offer.getHostname());
+				double jobCpus = job.getCpus();
+				double jobMem = job.getMem();
+				logger.info("job cpus ={} mem= {}", jobCpus, jobMem);
+				if (jobCpus <= offerCpus && jobMem <= offerMem) {
+					offerCpus -= jobCpus;
+					offerMem -= jobMem;
+					toLaunch.add(job.makeTask(offer.getSlaveId()));
+					job.setSubmitted(true);
+					launchedJobs.add(job);
+				}
+			}
+		}
+		logger.info("Size launchedJob : {}", launchedJobs.size());
+		logger.info("Size toLaunch : {}", toLaunch.size());
+		for (Job job : launchedJobs) {
+			job.launch();
+		}
+		jobs.removeAll(launchedJobs);
+		return toLaunch;
 	}
 
 	public List<TaskInfo> doFirstFit(Offer offer, List<Job> jobs) {
@@ -120,9 +156,13 @@ public class UselessRemoteBASH implements Scheduler {
 
 			}
 		}
+
+		logger.info("Total offer cpus = {} mem={}", offerCpus, offerMem);
+		logger.info("size job {}", jobs.size());
 		for (Job job : jobs) {
 			double jobCpus = job.getCpus();
 			double jobMem = job.getMem();
+			logger.info("job cpus ={} mem= {}", jobCpus, jobMem);
 			if (jobCpus <= offerCpus && jobMem <= offerMem) {
 				offerCpus -= jobCpus;
 				offerMem -= jobMem;
@@ -131,6 +171,8 @@ public class UselessRemoteBASH implements Scheduler {
 				launchedJobs.add(job);
 			}
 		}
+		logger.info("Size launchedJob : {}", launchedJobs.size());
+		logger.info("Size toLaunch : {}", toLaunch.size());
 		for (Job job : launchedJobs) {
 			job.launch();
 		}
@@ -144,7 +186,6 @@ public class UselessRemoteBASH implements Scheduler {
 
 	public void statusUpdate(SchedulerDriver schedulerDriver,
 			TaskStatus status) {
-
 		System.out.println("PhunghV got status update :" + status.getMessage());
 		System.out.println("Size job = " + this.jobs.size());
 		synchronized (this.jobs) {
@@ -168,7 +209,6 @@ public class UselessRemoteBASH implements Scheduler {
 						job.fail();
 						break;
 					default:
-						logger.info("check defaulllll");
 						break;
 					}
 				}

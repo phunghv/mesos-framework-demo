@@ -2,24 +2,18 @@
 <Configuration>
 	<Appenders>
 		<Console name="Console">
-			<PatternLayout pattern="PhungHV %d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
+			<PatternLayout
+				pattern="PhungHV %d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
 		</Console>
+		<File name="LogFile" fileName="all.log" immediateFlush="false"
+			append="false">
+			<PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
+		</File>
 	</Appenders>
 	<Loggers>
 		<Root level="DEBUG">
 			<AppenderRef ref="Console" />
+			<AppenderRef ref="LogFile" />
 		</Root>
-		<logger name="com" level="TRACE">
-			<AppenderRef ref="Console" />
-		</logger>
-		<logger name="com.journaldev" level="TRACE">
-			<AppenderRef ref="Console" />
-		</logger>
-		<logger name="net" level="ERROR">
-			<AppenderRef ref="Console" />
-		</logger>
-		<logger name="net.journaldev" level="ERROR">
-			<AppenderRef ref="Console" />
-		</logger>
 	</Loggers>
 </Configuration>

@@ -1,14 +1,18 @@
 {
-    "jobs": [
-        {
-            "cpus": 0.2,
-            "mem": 128,
-            "command": "while [ true ] ; do echo 'Hello PhungHV 1' ; sleep 5 ; done"
-        },
-        {
-            "cpus": 0.2,
-            "mem": 128,
-            "command": "while [ true ] ; do echo 'Hello PhungHV 2' ; sleep 5 ; done"
-        }
-    ]
+	"jobs": [
+		{
+			"cpus": 0.2,
+			"mem": 128,
+			"newly":"node250_admin",
+			"failover":"node248_osd2",
+			"command": "while [ true ] ; do echo 'Hello PhungHV 1' ; sleep 5 ; done"
+		},
+		{
+			"cpus": 0.2,
+			"mem": 128,
+			"newly":"node246_mon",
+			"failover":"node248_osd2",
+			"command": "while [ true ] ; do echo 'Hello PhungHV 2' ; sleep 5 ; done"
+		}
+	]
 }
