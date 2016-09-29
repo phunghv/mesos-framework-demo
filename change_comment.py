@@ -1,4 +1,4 @@
-import re
+import re,os
 
 def check_comment(full_string,index):
 	#Check if index is in a comment line or not
@@ -38,11 +38,26 @@ def check_variable_in_used(func_body,variable):
 		if var_name == variable:
 			return 1
 	return 0
-	
-with open('D:/restore.pm', 'r') as myfile:
+def get_return(func_body):
+	result=[]
+	lines = func_body.split('\n|\r\n')
+	p= re.compile('^return(.*?)')
+	for line in lines:
+		line = line.replace('\t','')
+		m= re.search('return(.*?);',line)
+		#print m.group()
+		#p = re.compile('(a)b')
+		#m = p.match('ab')
+		if m != None:
+			#print m.group(1)
+			result.append(m.group(1))
+	return result
+perl_file = "utilities.pm"
+perl_file_outout="out_"+perl_file
+with open(perl_file, 'r') as myfile:
 	data=myfile.read();
 full_statement = ""
-with open('D:/restore.pm', 'r') as myfile:
+with open(perl_file, 'r') as myfile:
 	data=myfile.readlines()
 	for line in data:
 		line2 = line.strip()
@@ -119,13 +134,16 @@ for index in range(len(list_body)):
 			if check_variable_in_used(body,global_variable2) == 1:
 				all_global.append(global_variable)
 	list_global_result[func_name] = all_global
-			
-		
+try:
+	os.remove(perl_file_outout)
+except OSError:
+	pass			
+text_file = open(perl_file_outout, "a+")		
 for index in range(len(list_body)):
 	body = list_body[index]
 	func_name = list_function_name[index]
 	list_global_val = list_global_result[func_name]
-	text_file = open("D:/Output.txt", "a+")
+
 	#text_file.write("######################################################\n\n")
 	text_file.write("#** @function public " + func_name)
 	text_file.write("\n# Brief Description: ")
@@ -142,12 +160,16 @@ for index in range(len(list_body)):
 			tmp_var = "hash " + global_var[1:]
 		text_file.write("\n# @params " + tmp_var + " (global):")
 	text_file.write("\n# Output:")
-	text_file.write("\n# @retval")
+	
+	return_val=get_return(body)
+	for val in return_val:
+		text_file.write("\n# @retval value "+val)
 	text_file.write("\n#*")
 	#text_file.write("\n######################################################\n")
 	text_file.write("\n\nsub " + func_name + " {")
 	text_file.write(body + "}\n\n")
-	text_file.close()
+	
+text_file.close()
 
 
 
