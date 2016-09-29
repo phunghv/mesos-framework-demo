@@ -1,4 +1,5 @@
 import re,os
+from collections import namedtuple
 
 def check_comment(full_string,index):
 	#Check if index is in a comment line or not
@@ -38,10 +39,23 @@ def check_variable_in_used(func_body,variable):
 		if var_name == variable:
 			return 1
 	return 0
+def get_log(log_line):
+	m = re.search("write_log(.*?);",log_line)
+	if m != None:
+    		log = m.group(1)
+			log = log.replace('\",\"',' ');
+		log = log.replace('(\"','')
+		log = log.replace(')"','')
+    	return log
+	return ""
 def get_return(func_body):
 	result=[]
-	lines = func_body.split('\n|\r\n')
+	lines = func_body.split('\n')
 	p= re.compile('^return(.*?)')
+	print len(lines)
+	ReturnValue = namedtuple('ReturnValue', 'value log')
+	log=""
+	pre_line=""
 	for line in lines:
 		line = line.replace('\t','')
 		m= re.search('return(.*?);',line)
@@ -50,12 +64,15 @@ def get_return(func_body):
 		#m = p.match('ab')
 		if m != None:
 			#print m.group(1)
+			a =ReturnValue(value=m.group(1), log=get_log(pre_line))
+			print a 
 			result.append(m.group(1))
+		pre_line = line						
 	return result
 perl_file = "utilities.pm"
 perl_file_outout="out_"+perl_file
 with open(perl_file, 'r') as myfile:
-	data=myfile.read();
+	data=myfile.read()
 full_statement = ""
 with open(perl_file, 'r') as myfile:
 	data=myfile.readlines()
