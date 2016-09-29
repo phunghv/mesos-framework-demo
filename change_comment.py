@@ -42,23 +42,27 @@ def check_variable_in_used(func_body,variable):
 def get_log(log_line):
 	m = re.search("write_log(.*?);",log_line)
 	if m != None:
-    		log = m.group(1)
-			log = log.replace('\",\"',' ');
+    		
+		log = m.group(1)
+		log = log.replace('\",\"',' ');
 		log = log.replace('(\"','')
-		log = log.replace(')"','')
-    	return log
+		log = log.replace(')\"','')
+		log = log.replace(')','')
+		log = log.replace('(','')
+		log = log.replace('".','')
+		return log
 	return ""
 def get_return(func_body):
 	result=[]
 	lines = func_body.split('\n')
-	p= re.compile('^return(.*?)')
+	p= re.compile('^return (.*?)')
 	print len(lines)
 	ReturnValue = namedtuple('ReturnValue', 'value log')
 	log=""
 	pre_line=""
 	for line in lines:
 		line = line.replace('\t','')
-		m= re.search('return(.*?);',line)
+		m= re.search('return (.*?);',line)
 		#print m.group()
 		#p = re.compile('(a)b')
 		#m = p.match('ab')
@@ -66,8 +70,20 @@ def get_return(func_body):
 			#print m.group(1)
 			a =ReturnValue(value=m.group(1), log=get_log(pre_line))
 			print a 
-			result.append(m.group(1))
-		pre_line = line						
+			#result.append(m.group(1))
+			result.append(a)
+		pre_line = line
+	return result
+def get_var(func_body):
+	result = []
+	lines = func_body.split('\n')
+	for line in lines:
+		line = line.replace('\t','')
+		m = re.search('my \((.*?)\) = @',line)
+		if m != None:
+			var= m.group(1)
+			for v in var.split(','):
+				result.append(v)
 	return result
 perl_file = "utilities.pm"
 perl_file_outout="out_"+perl_file
@@ -122,7 +138,7 @@ string_global2 = """$job_id,$job_name, $seq_num, $v_retry_int, $v_retry_num, $co
 	$job_file, $config_file, $vcenter_ip, $vi_user, $cred_file, @storage_ips,
 	$is_preserved, $target_name, $current_num, $management_file, $lock_home,"""
 	
-list_variable_meaning = {}
+list_variable_meaning = {'$a':'this is test variable','$b':'var second'}
 ############## Init variable ########
 	
 	
@@ -176,11 +192,21 @@ for index in range(len(list_body)):
 		else:
 			tmp_var = "hash " + global_var[1:]
 		text_file.write("\n# @params " + tmp_var + " (global):")
+	my_var = get_var(body)
+	for var in my_var:
+		print var
+		text_file.write("\n# @params "+var+" :")
+		des = list_variable_meaning.get(var)
+		if des != None:
+			text_file.write(list_variable_meaning.get(var)+".")
 	text_file.write("\n# Output:")
 	
 	return_val=get_return(body)
 	for val in return_val:
-		text_file.write("\n# @retval value "+val)
+		text_file.write("\n# @retval value "+val.value)
+		if val.log != '':
+			text_file.write(' and write message "'+val.log+'" to log file')
+		text_file.write('.')
 	text_file.write("\n#*")
 	#text_file.write("\n######################################################\n")
 	text_file.write("\n\nsub " + func_name + " {")
